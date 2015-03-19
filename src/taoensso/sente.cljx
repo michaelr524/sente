@@ -785,6 +785,7 @@
      cbs-waiting_ ; {<cb-uuid> <fn> ...}
      state_       ; {:type _ :open? _ :uid _ :csrf-token _ :destroyed? _}
      packer       ; IPacker
+     additional-headers-fn
      ]
 
   IChSocket
@@ -894,7 +895,7 @@
       chsk)))
 
 #+cljs
-(defrecord ChAjaxSocket [client-id url chs timeout-ms curr-xhr_ state_ packer]
+(defrecord ChAjaxSocket [client-id url chs timeout-ms curr-xhr_ state_ packer additional-headers-fn]
   IChSocket
   (chsk-send!* [chsk ev {:as opts ?timeout-ms :timeout-ms ?cb :cb :keys [flush?]}]
     (assert-send-args ev ?timeout-ms ?cb)
@@ -913,7 +914,8 @@
               {:_           (enc/now-udt) ; Force uncached resp
                :csrf-token  (:csrf-token @state_)
                ;; :client-id client-id ; Unnecessary here
-               :ppstr       ppstr})}
+               :ppstr       ppstr})
+            :headers (additional-headers-fn)}
 
            (fn ajax-cb [{:keys [?error ?content]}]
              (if ?error
@@ -964,7 +966,8 @@
                           ;; reply immediately with a handshake response,
                           ;; letting us confirm that our client<->server comms
                           ;; are working:
-                          (when-not (:open? @state_) {:handshake? true}))}
+                          (when-not (:open? @state_) {:handshake? true}))
+                :headers (additional-headers-fn)}
 
                (fn ajax-cb [{:keys [?error ?content]}]
                  (if ?error
@@ -1030,7 +1033,7 @@
     :packer       ; :edn (default), or an IPacker implementation (experimental)."
   [path &
    & [{:keys [type recv-buf-or-n ws-kalive-ms lp-timeout-ms chsk-url-fn packer
-              client-id]
+              client-id additional-headers-fn]
        :as   opts
        :or   {type          :auto
               recv-buf-or-n (async/sliding-buffer 2048) ; Mostly for buffered-evs
@@ -1089,7 +1092,8 @@
                    :nattempt_     (atom 0)
                    :cbs-waiting_  (atom {})
                    :state_        (atom {:type :ws :open? false
-                                         :destroyed? false})})))
+                                         :destroyed? false})
+                   :additional-headers-fn additional-headers-fn})))
 
          (and (not= type :ws)
               (chsk-init!
@@ -1101,7 +1105,8 @@
                    :timeout-ms lp-timeout-ms
                    :curr-xhr_  (atom nil)
                    :state_     (atom {:type :ajax :open? false
-                                      :destroyed? false})}))))
+                                      :destroyed? false})
+                   :additional-headers-fn additional-headers-fn}))))
 
         _ (assert chsk "Failed to create channel socket")
         send-fn (partial chsk-send! chsk)
